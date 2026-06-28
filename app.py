@@ -2,138 +2,335 @@ import streamlit as st
 from ultralytics import YOLO
 from PIL import Image
 import tempfile
+import numpy as np
+import cv2
+import os
+from collections import Counter
 
-# -----------------------------
+# ----------------------------------
 # Page Configuration
-# -----------------------------
+# ----------------------------------
+
 st.set_page_config(
-    page_title="Fire & Smoke Detection",
+    page_title="🔥 FireVision AI",
     page_icon="🔥",
     layout="wide"
 )
 
-# -----------------------------
-# Load YOLO Model
-# -----------------------------
+# ----------------------------------
+# Load Model
+# ----------------------------------
+
 @st.cache_resource
 def load_model():
     return YOLO("model.pt")
 
 model = load_model()
 
-# -----------------------------
-# Title
-# -----------------------------
-st.title("🔥 Fire & Smoke Detection System")
+# ----------------------------------
+# Header
+# ----------------------------------
 
 st.markdown("""
-This application uses a trained **YOLOv8** model to detect **Fire** and **Smoke** from uploaded images.
+# 🔥 FireVision AI
+
+### Intelligent Fire & Smoke Detection using YOLOv8
 """)
+
+st.success("🟢 AI Model Loaded Successfully")
 
 st.divider()
 
-# -----------------------------
+# ----------------------------------
+# Sidebar
+# ----------------------------------
+
+with st.sidebar:
+
+    st.title("⚙ System")
+
+    st.markdown("---")
+
+    st.info("""
+This application detects
+
+🔥 Fire
+
+💨 Smoke
+
+from uploaded images using
+a trained YOLOv8 model.
+""")
+
+    st.markdown("---")
+
+    st.write("Model")
+    st.code("YOLOv8")
+
+    st.write("Framework")
+    st.code("Ultralytics")
+
+    st.write("Status")
+    st.success("Ready")
+
+# ----------------------------------
 # Upload Image
-# -----------------------------
+# ----------------------------------
+
 uploaded_file = st.file_uploader(
     "📤 Upload an Image",
     type=["jpg", "jpeg", "png"]
 )
 
-# -----------------------------
-# If image uploaded
-# -----------------------------
 if uploaded_file is not None:
 
-    image = Image.open(uploaded_file)
+    image = Image.open(uploaded_file).convert("RGB")
 
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("📷 Uploaded Image")
-        st.image(image, use_container_width=True)
 
-    if st.button("🔥 Detect Fire / Smoke", use_container_width=True):
+        st.subheader("📷 Original Image")
 
-        with st.spinner("Running Detection..."):
+        st.image(
+            image,
+            use_container_width=True
+        )
 
-            # Save image temporarily
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+    detect = st.button(
+        "🔥 Detect Fire / Smoke",
+        use_container_width=True
+    )
+
+    if detect:
+
+        with st.spinner("Analyzing image..."):
+
+            with tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=".jpg"
+            ) as tmp:
+
                 image.save(tmp.name)
-                temp_path = tmp.name
 
-            # Prediction
+                image_path = tmp.name
+
             results = model.predict(
-                source=temp_path,
+                source=image_path,
                 conf=0.5
             )
 
             result = results[0]
 
-            # Draw detections
             plotted = result.plot()
 
+            plotted = cv2.cvtColor(
+                plotted,
+                cv2.COLOR_BGR2RGB
+            )
+
             with col2:
+
                 st.subheader("🤖 Detection Result")
-                st.image(plotted, use_container_width=True)
+
+                st.image(
+                    plotted,
+                    use_container_width=True
+                )
 
             st.divider()
 
-            # ----------------------------------
-            # Detection Information
-            # ----------------------------------
+            # -----------------------------
+            # Collect detections
+            # -----------------------------
 
-            if len(result.boxes) == 0:
+            detected_classes = []
+
+            highest_conf = 0
+
+            highest_label = None
+
+            for box in result.boxes:
+
+                cls = int(box.cls[0])
+
+                label = result.names[cls]
+
+                confidence = float(box.conf[0])
+
+                detected_classes.append(label)
+
+                if confidence > highest_conf:
+
+                    highest_conf = confidence
+
+                    highest_label = label
+
+            counter = Counter(detected_classes)
+                        # ------------------------------------------
+            # No Detection
+            # ------------------------------------------
+
+            if len(detected_classes) == 0:
 
                 st.success("✅ No Fire or Smoke Detected")
 
+                st.info("""
+The uploaded image does not appear to contain
+Fire or Smoke.
+
+The environment looks safe.
+""")
+
             else:
 
-                st.subheader("📊 Detection Summary")
+                st.subheader("📊 AI Detection Summary")
 
-                for box in result.boxes:
+                colA, colB, colC = st.columns(3)
 
-                    cls = int(box.cls[0])
+                with colA:
 
-                    label = result.names[cls]
+                    st.metric(
+                        "Objects Detected",
+                        len(detected_classes)
+                    )
 
-                    confidence = float(box.conf[0])
+                with colB:
 
-                    st.write(f"### 🔹 {label.upper()}")
+                    st.metric(
+                        "Highest Confidence",
+                        f"{highest_conf:.2%}"
+                    )
 
-                    st.write(f"**Confidence:** {confidence:.2%}")
+                with colC:
 
-                    # Risk Level
-                    if confidence >= 0.90:
-                        risk = "🔴 HIGH"
+                    if highest_label:
 
-                    elif confidence >= 0.70:
-                        risk = "🟠 MEDIUM"
+                        st.metric(
+                            "Primary Detection",
+                            highest_label.upper()
+                        )
 
-                    else:
-                        risk = "🟢 LOW"
+                st.divider()
 
-                    st.write(f"**Risk Level:** {risk}")
+                st.subheader("🔥 Detected Objects")
 
-                    # Recommendation
-                    st.write("### 💡 Recommendation")
+                for label, count in counter.items():
 
-                    if label.lower() == "fire":
+                    emoji = "🔥" if label.lower() == "fire" else "💨"
 
-                        st.error("""
-- Evacuate the area immediately.
-- Call the Fire Department.
-- Do not attempt to extinguish large fires yourself.
+                    st.write(f"{emoji} **{label.title()}** : {count}")
+
+                st.divider()
+
+                # -----------------------------
+                # Risk Analysis
+                # -----------------------------
+
+                st.subheader("🚨 Risk Assessment")
+
+                if highest_conf >= 0.90:
+
+                    st.error("🔴 HIGH RISK")
+
+                elif highest_conf >= 0.70:
+
+                    st.warning("🟠 MEDIUM RISK")
+
+                else:
+
+                    st.info("🟢 LOW RISK")
+
+                st.progress(int(highest_conf * 100))
+
+                st.write(f"Confidence Score : **{highest_conf:.2%}**")
+
+                st.divider()
+
+                # -----------------------------
+                # Recommendation
+                # -----------------------------
+
+                st.subheader("💡 AI Recommendation")
+
+                if "fire" in [x.lower() for x in detected_classes]:
+
+                    st.error("""
+### 🔥 Fire Detected
+
+Immediate Actions
+
+• Evacuate everyone from the area.
+
+• Contact the Fire Department immediately.
+
+• Do NOT attempt to extinguish large fires.
+
+• Switch off electrical power if it is safe.
+
+• Keep away from hazardous materials.
 """)
 
-                    elif label.lower() == "smoke":
+                elif "smoke" in [x.lower() for x in detected_classes]:
 
-                        st.warning("""
-- Check the area for possible fire.
-- Ensure proper ventilation.
-- Monitor the surroundings carefully.
+                    st.warning("""
+### 💨 Smoke Detected
+
+Suggested Actions
+
+• Inspect the area carefully.
+
+• Check for possible fire sources.
+
+• Improve ventilation if safe.
+
+• Continue monitoring the surroundings.
 """)
+
+                else:
+
+                    st.success("""
+### ✅ Environment Safe
+
+No fire or smoke detected.
+""")
+
+                st.divider()
+
+                # -----------------------------
+                # Download Result
+                # -----------------------------
+
+                success, encoded = cv2.imencode(".jpg", cv2.cvtColor(plotted, cv2.COLOR_RGB2BGR))
+
+                if success:
+                    st.download_button(
+                        label="📥 Download Detection Result",
+                        data=encoded.tobytes(),
+                        file_name="fire_detection_result.jpg",
+                        mime="image/jpeg",
+                        use_container_width=True
+                    )
+
+            os.remove(image_path)
+
+# ------------------------------------------
+# Footer
+# ------------------------------------------
 
 st.divider()
 
-st.caption("Developed using YOLOv8 + Streamlit")
+st.markdown("### 📌 About")
+
+st.info("""
+FireVision AI is an intelligent Fire & Smoke Detection System developed using:
+
+• YOLOv8 Object Detection
+• Streamlit
+• PyTorch
+• OpenCV
+
+This project is intended for educational and demonstration purposes.
+""")
+
+st.caption("© 2026 FireVision AI | Powered by YOLOv8 & Streamlit")
