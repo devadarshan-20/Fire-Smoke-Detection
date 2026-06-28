@@ -1,4 +1,7 @@
 import streamlit as st
+from ultralytics import YOLO
+from PIL import Image
+import tempfile
 
 # Page configuration
 st.set_page_config(
